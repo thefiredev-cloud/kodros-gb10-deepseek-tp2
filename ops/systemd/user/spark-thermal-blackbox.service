@@ -1,0 +1,9 @@
+[Unit]
+Description=Spark thermal/power black box (2 s fsynced CSV in ~/ops/thermal-log)
+[Service]
+ExecStart=%h/ops/bin/spark-thermal-blackbox
+Restart=always
+RestartSec=5
+Nice=10
+[Install]
+WantedBy=default.target

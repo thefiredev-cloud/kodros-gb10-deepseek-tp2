@@ -1,0 +1,12 @@
+[Unit]
+Description=cluster-swap wake/sleep model manager (:8010 -> vLLM :8000)
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 %h/ops/bin/cluster-swap.py
+Restart=always
+RestartSec=3
+Environment=SWAP_IDLE_TTL_S=1800
+
+[Install]
+WantedBy=default.target

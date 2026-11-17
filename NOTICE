@@ -1,0 +1,17 @@
+kodros-gb10-deepseek-tp2
+Copyright 2026 Tanner Osterkamp
+
+The scripts, service units and documentation in this repository are licensed
+under the Apache License 2.0 (see LICENSE).
+
+This repository depends on, and does not copy, the following upstream work.
+Each keeps its own license:
+
+- MiaAI-Lab/DeepSeek-v4.1-Flash-1017-2x-DGX-Sparks (deployment recipe, Apache-2.0)
+- ashhart/TensorFold (inference engine, Apache-2.0)
+- deepseek-ai/DeepSeek-V4.1-Flash-1017 (model, MIT)
+- Mia-AiLab/DeepSeek-V4.1-Flash-1017-EXL3-EAQ-v1-2.9-bpw (quantization, MIT)
+- turboderp-org/exllamav3 (EXL3 format)
+
+recipe/patches/0001-start-port-check-bound-host.patch modifies upstream start.sh
+and is offered under Apache-2.0, the upstream recipe's license.

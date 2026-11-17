@@ -1,0 +1,23 @@
+# Prompt cache and drafting counters for one engine run, from rank 0's saved log
+# (~/.cache/dsv41-tensorfold/logs/20261027-185426-rank0.log.gz, written by stop.sh).
+# Run: 2026-10-27T10:10:11Z (first completed request) to 2026-10-27T18:52:05Z (last), 8.7 h.
+# Engine: tensorfold-dsv41:exl3-tp2-928adbd0e57d, PARALLEL=8, RDMA_NAP_US=2000, spill off, prompt cache 512 MiB.
+# Traffic: agent sessions (coding agents and a chat gateway) through the workstation gateway.
+#
+# Method: sum the fields of every "[tensorfold] done chatcmpl-... prompt=N cached=M ... tokens=T ... accepted=A/D" line.
+
+completed requests                 968
+requests ended early (error/cancel) 135
+prompt tokens                      76,561,309
+  served from cache                73,385,984
+  computed (uncached)               3,175,325   (4.15 %)
+generated tokens                      464,841   (prompt:generated = 165:1)
+requests with cached=0                    277
+requests with prompt >= 80,000 tokens     606
+prompt length, median / p90 / max      94,397 / 141,742 / 162,500 tokens
+DSpark drafts accepted / drafted   298,707 / 445,003   (67.1 %)
+
+# Last "prompt cache:" line of the run (2026-10-27T18:51:59Z):
+# 79 states, 503 MiB and 0 MiB spare of 512 MiB (hits 694, misses 405, evicted 183, refused 0, failed 4)
+
+# The run ended at 18:52:07Z with RingFailed (rank pair broke) when the thermal guard stopped rank 1 at 89 C.

@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""Spark-cluster thermal and memory guard with conservative software trip limits.
+
+Reads the newest row of this node's black-box CSV (spark-thermal-blackbox.service) every 2 s.
+Trips when the hottest of GPU temp and all thermal zones is >= TRIP_C for HOLD consecutive rows, or when
+MemAvailable is below MEM_FLOOR_MIB for 2 consecutive rows.
+A trip stops the engine container here and on the peer rank and appends to TRIPPED.
+It also stops inference if thermal telemetry is missing, malformed, or over 10 seconds old.
+It never restarts anything.
+"""
+import glob, os, socket, subprocess, time
+from datetime import datetime, timezone
+
+LOG = os.path.expanduser("~/ops/thermal-log")
+TRIP_C = int(os.environ.get("TRIP_C", "89"))
+WARN_C = int(os.environ.get("WARN_C", "86"))
+HOLD = int(os.environ.get("HOLD", "3"))
+MEM_FLOOR_MIB = int(os.environ.get("MEM_FLOOR_MIB", "1024"))
+CONTAINER = os.environ.get("CONTAINER", "dsv41-1017-tf")
+PEERS = {"head-host": "user@192.0.2.2", "worker-host": "user@192.0.2.1"}
+PEER = os.environ.get("PEER", PEERS.get(socket.gethostname(), ""))
+
+
+def latest():
+    try:
+        files = sorted(glob.glob(os.path.join(LOG, "*.csv")))
+        if not files:
+            return None
+        with open(files[-1], "rb") as fh:
+            header = fh.readline().decode(errors="replace").strip().split(",")
+            fh.seek(0, 2)
+            fh.seek(max(0, fh.tell() - 512))
+            cols = fh.read().decode(errors="replace").strip().splitlines()[-1].split(",")
+        prefix = ["utc", "gpu_c", "gpu_w", "gpu_util", "sm_mhz", "clk_reasons",
+                  "memavail_mib", "swap_mib", "load1"]
+        if (header[:9] != prefix or len(header) < 10 or len(cols) != len(header)
+                or header[9:] != [f"z{i}_c" for i in range(len(header) - 9)]):
+            return None
+        values = [cols[1], *cols[9:]]
+        if any(not c.isascii() or not c.isdigit() or int(c) <= 0 for c in values):
+            return None
+        if not cols[6].isascii() or not cols[6].isdigit():
+            return None
+        return cols[0], max(int(c) for c in values), int(cols[6])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def telemetry_stale(row):
+    if row is None:
+        return True
+    try:
+        sample = datetime.strptime(row[0], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
+        age = time.time() - sample
+        return age > 10 or age < -10
+    except (TypeError, ValueError):
+        return True
+
+
+def log(msg):
+    print(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), msg, flush=True)
+
+
+def stopped(peer=False):
+    command = ["docker", "inspect", "--format", "{{.State.Running}}", CONTAINER]
+    if peer:
+        command = ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=5", PEER, *command]
+    try:
+        state = subprocess.run(command, capture_output=True, text=True, timeout=15 if peer else 5)
+        if "No such container" in state.stderr or "No such object" in state.stderr:
+            return True
+        return state.returncode == 0 and state.stdout.strip() == "false"
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def trip(reason):
+    log(f"TRIP {reason}: stopping {CONTAINER} here and on {PEER or 'no peer'}")
+    success = True
+    try:
+        result = subprocess.run(["docker", "stop", "-t", "3", CONTAINER],
+                                capture_output=True, text=True, timeout=10)
+        if result.returncode != 0 and "No such container" not in result.stderr:
+            success = False
+            log(f"local stop failed: rc={result.returncode} {result.stderr.strip()[:200]}")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        success = False
+        log(f"local stop failed: {type(exc).__name__}")
+    if PEER:
+        try:
+            r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
+                                "-o", "ConnectTimeout=5", PEER, "docker", "stop", "-t", "3", CONTAINER],
+                               capture_output=True, text=True, timeout=15)
+            log(f"peer stop rc={r.returncode} {r.stderr.strip()[:200]}")
+            success = success and (r.returncode == 0 or "No such container" in r.stderr)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            success = False
+            log(f"peer stop failed: {type(exc).__name__}")
+    os.makedirs(LOG, exist_ok=True)
+    with open(os.path.join(LOG, "TRIPPED"), "a") as fh:
+        fh.write(f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} {socket.gethostname()} {reason}\n")
+    if success:
+        time.sleep(60)
+    return success
+
+
+hot = low = 0
+last_ts, warned = None, False
+pending_reason = None
+while True:
+    if pending_reason is not None:
+        if trip(pending_reason):
+            pending_reason = None
+            hot = low = 0
+        time.sleep(2)
+        continue
+    row = latest()
+    if telemetry_stale(row):
+        if not (stopped() and (not PEER or stopped(peer=True))):
+            pending_reason = "thermal telemetry missing, malformed, or stale"
+            if trip(pending_reason):
+                pending_reason = None
+                hot = low = 0
+        else:
+            hot = low = 0
+        time.sleep(2)
+        continue
+    if row and row[0] != last_ts:
+        last_ts, peak, mem = row
+        hot = hot + 1 if peak >= TRIP_C else 0
+        low = low + 1 if mem is not None and mem < MEM_FLOOR_MIB else 0
+        if peak >= WARN_C and not warned:
+            log(f"WARN peak {peak} C at {last_ts}")
+        warned = peak >= WARN_C
+        if hot >= HOLD:
+            pending_reason = f"peak {peak}C >= {TRIP_C}C for {HOLD} rows at {last_ts}"
+        elif low >= 2:
+            pending_reason = f"MemAvailable {mem} MiB < {MEM_FLOOR_MIB} MiB for 2 rows at {last_ts}"
+        if pending_reason is not None and trip(pending_reason):
+            pending_reason = None
+            hot = low = 0
+    time.sleep(2)

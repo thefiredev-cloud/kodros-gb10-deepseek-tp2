@@ -1,0 +1,70 @@
+#!/bin/bash
+# dsv41-keepalive: keep DeepSeek-V4.1-Flash-1017 (abliterated overlay) serving on the two-node pair.
+# Runs from dsv41-keepalive.timer every 2 min and after boot.
+# Restarts only when both nodes are cool, the worker is reachable, and the restart budget allows.
+# Honors OWNER_AWAY_HOLD and THERMAL_QUALIFICATION. Thermal/memory guards stay in charge of stopping.
+# Recipe: MiaAI-Lab/DeepSeek-v4.1-Flash-1017-2x-DGX-Sparks (ABLIT=1, Mia EAQ v1 2.9 bpw) checked out at
+# ~/work/mia-dsv41/repo. Published copy: addresses and users are placeholders.
+set -u
+export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"   # hf for prepare.sh under the systemd timer
+RECIPE=$HOME/work/mia-dsv41/repo
+CONTAINER=dsv41-1017-tf
+WORKER=user@192.0.2.2
+API=http://192.0.2.1:8000
+MODEL_NAME=DeepSeek-V4.1-Flash-1017-EXL3
+STATE=$HOME/ops/state/dsv41-keepalive
+LOG=$HOME/ops/logs/dsv41-keepalive.log
+COOL_C=${KEEPALIVE_COOL_C:-70}          # both ACPI z0/z2 below this before a restart
+TRIP_QUIET_S=${KEEPALIVE_TRIP_QUIET_S:-900}   # wait after the last guard trip
+MAX_RESTARTS=${KEEPALIVE_MAX_RESTARTS:-4}     # per window
+WINDOW_S=${KEEPALIVE_WINDOW_S:-21600}         # 6 h
+mkdir -p "$STATE" "$(dirname "$LOG")"
+exec 9>"$STATE/lock"; flock -n 9 || exit 0
+log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >>"$LOG"; }
+on_worker() { ssh -o BatchMode=yes -o ConnectTimeout=10 "$WORKER" "$@"; }
+
+for hold in "$HOME/ops/state/OWNER_AWAY_HOLD" "$HOME/ops/state/THERMAL_QUALIFICATION"; do
+  [ -e "$hold" ] && { log "skip: $(basename "$hold") present"; exit 0; }
+done
+cd "$RECIPE" || { log "error: no recipe dir"; exit 1; }
+# a start/prepare already running owns the pair
+pgrep -f "$RECIPE/(start|prepare)\.sh|scripts/prepare\.sh" >/dev/null && exit 0
+
+worker_up=0; on_worker "docker ps --format '{{.Names}}'" 2>/dev/null | grep -qx "$CONTAINER" && worker_up=1
+head_up=0; docker ps --format '{{.Names}}' | grep -qx "$CONTAINER" && head_up=1
+if [ $head_up = 1 ] && [ $worker_up = 1 ] && curl -sf --max-time 8 "$API/v1/models" 2>/dev/null | grep -q "$MODEL_NAME"; then
+  rm -f "$STATE/down-since"; exit 0
+fi
+[ -f "$STATE/down-since" ] || date +%s >"$STATE/down-since"
+# still loading after a start: give it 15 min before calling it down
+if [ $head_up = 1 ] && [ $worker_up = 1 ]; then
+  up=$(docker inspect -f '{{.State.StartedAt}}' "$CONTAINER" 2>/dev/null)
+  [ -n "$up" ] && [ $(( $(date +%s) - $(date -d "$up" +%s) )) -lt 900 ] && exit 0
+fi
+
+on_worker true 2>/dev/null || { log "wait: worker unreachable"; exit 0; }
+
+row=$(tail -n 1 "$HOME/ops/thermal-log/$(date -u +%F).csv" 2>/dev/null)
+z0=$(cut -d, -f10 <<<"$row"); z2=$(cut -d, -f12 <<<"$row")
+if ! [[ "$z0" =~ ^[0-9]+$ && "$z2" =~ ^[0-9]+$ ]] || [ "$z0" -ge "$COOL_C" ] || [ "$z2" -ge "$COOL_C" ]; then
+  log "wait: spark z0=${z0:-?} z2=${z2:-?} (need <$COOL_C)"; exit 0
+fi
+wz=$(on_worker "tail -n 1 \$HOME/ops/thermal-log/\$(date -u +%F).csv" 2>/dev/null | cut -d, -f10)
+if [[ "$wz" =~ ^[0-9]+$ ]] && [ "$wz" -ge "$COOL_C" ]; then log "wait: ascent z0=$wz"; exit 0; fi
+
+last_trip=$(grep -E ' (peak|MemAvailable) ' "$HOME/ops/thermal-log/TRIPPED" 2>/dev/null | tail -n 1 | cut -d' ' -f1)
+if [ -n "$last_trip" ]; then
+  age=$(( $(date +%s) - $(date -d "$last_trip" +%s 2>/dev/null || echo 0) ))
+  [ "$age" -lt "$TRIP_QUIET_S" ] && { log "wait: guard tripped ${age}s ago"; exit 0; }
+fi
+
+now=$(date +%s); touch "$STATE/restarts"
+recent=$(awk -v c=$((now - WINDOW_S)) '$1>c' "$STATE/restarts" | wc -l)
+if [ "$recent" -ge "$MAX_RESTARTS" ]; then log "stop: $recent restarts in window; needs a human"; exit 0; fi
+echo "$now" >>"$STATE/restarts"
+
+L="$HOME/.cache/dsv41-tensorfold/logs/keepalive-$(date -u +%Y%m%dT%H%M%SZ).log"
+mkdir -p "$(dirname "$L")"
+log "restart: head_up=$head_up worker_up=$worker_up z0=$z0 z2=$z2 ascent=$wz log=$L"
+if ./start.sh restart >"$L" 2>&1; then log "ok: serving"; rm -f "$STATE/down-since"
+else log "fail: rc=$? see $L"; fi

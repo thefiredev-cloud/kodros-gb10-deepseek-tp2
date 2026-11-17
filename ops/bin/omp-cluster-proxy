@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+"""Loopback forward proxy from local agents to the two-node cluster model.
+
+Listens on 127.0.0.1:8080, forwards requests to the head's cluster-swap proxy (:8010),
+and injects the cluster bearer server-side (CLUSTER_API_KEY, read from ENV_FILE at startup).
+Request bodies pass through unchanged and are not logged.
+
+When a client hangs up before its reply is done, the upstream request is closed as well, so the
+engine cancels the generation instead of holding a stream for a reader that is gone.
+
+Published copy: the upstream address and env-file path are placeholders; set CLUSTER_UPSTREAM
+and CLUSTER_ENV_FILE.
+"""
+import http.client
+import json
+import os
+import select
+import socket
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit
+
+LISTEN = ("127.0.0.1", 8080)
+UPSTREAM = os.environ.get("CLUSTER_UPSTREAM", "http://head.example:8010")
+# A long cold prefill can take longer than 300 s; the head's proxy allows 1200 s.
+READ_TIMEOUT_S = 1500  # must exceed Spark cluster-swap SWAP_READ_TIMEOUT_S (1200)
+
+
+def load_key() -> str:
+    path = os.path.expanduser(os.environ.get("CLUSTER_ENV_FILE", "~/.config/cluster-gateway/env"))
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if line.startswith("CLUSTER_API_KEY="):
+                return line.split("=", 1)[1].strip().strip("'\"")
+    raise RuntimeError(f"CLUSTER_API_KEY not found in {path}")
+
+
+API_KEY = load_key()
+
+
+def watch_for_hangup(client: socket.socket, upstream: socket.socket, done: threading.Event,
+                     hung_up: threading.Event) -> None:
+    """Shut the upstream socket when the client hangs up before the reply is done."""
+    while not done.is_set():
+        try:
+            readable, _, _ = select.select([client], [], [], 1.0)
+            if not readable:
+                continue
+            if client.recv(1, socket.MSG_PEEK):
+                return  # More bytes from a live client, not a hangup.
+        except OSError:
+            pass  # The client socket is already gone.
+        break
+    else:
+        return
+    hung_up.set()
+    try:
+        upstream.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "omp-cluster-proxy/1.2"
+
+    def _forward(self):
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        body = self.rfile.read(length) if length else None
+        ctype = self.headers.get("Content-Type")
+        headers = {"Authorization": f"Bearer {API_KEY}"}
+        if ctype:
+            headers["Content-Type"] = ctype
+        upstream = urlsplit(UPSTREAM)
+        conn = http.client.HTTPConnection(upstream.hostname, upstream.port, timeout=READ_TIMEOUT_S)
+        done, hung_up = threading.Event(), threading.Event()
+        response_started = False
+        try:
+            conn.request(self.command, self.path, body=body, headers=headers)
+            threading.Thread(target=watch_for_hangup, args=(self.connection, conn.sock, done, hung_up),
+                             daemon=True).start()
+            resp = conn.getresponse()
+            self.send_response(resp.status)
+            self.send_header("Content-Type", resp.headers.get("Content-Type", ctype or "application/json"))
+            self.end_headers()
+            response_started = True
+            while True:
+                chunk = resp.read1(65536)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+        except Exception as exc:  # noqa: BLE001 - surfacing as 502 is the job
+            if response_started or hung_up.is_set():
+                self.close_connection = True
+                return
+            detail = json.dumps({"error": str(exc)}).encode()
+            self.send_response(502)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(detail)))
+            self.end_headers()
+            self.wfile.write(detail)
+        finally:
+            done.set()
+            conn.close()
+
+    do_GET = _forward
+    do_POST = _forward
+    do_DELETE = _forward
+
+    def log_message(self, *args):  # quiet
+        pass
+
+
+if __name__ == "__main__":
+    ThreadingHTTPServer(LISTEN, Handler).serve_forever()

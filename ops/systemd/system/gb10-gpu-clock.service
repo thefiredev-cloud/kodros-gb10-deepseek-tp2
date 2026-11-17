@@ -1,0 +1,13 @@
+[Unit]
+Description=GB10 GPU clock range 300-2100 MHz (NVIDIA staff power-transient mitigation, forum t/377478)
+After=nvidia-persistenced.service systemd-modules-load.service
+Wants=nvidia-persistenced.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/nvidia-smi -lgc 300,2100
+ExecStop=/usr/bin/nvidia-smi -rgc
+
+[Install]
+WantedBy=multi-user.target

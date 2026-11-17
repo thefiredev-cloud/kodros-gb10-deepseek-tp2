@@ -1,0 +1,16 @@
+[Unit]
+Description=Cluster loopback gateway (127.0.0.1:8080 -> head :8010)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=CLUSTER_UPSTREAM=http://head.example:8010
+Environment=CLUSTER_ENV_FILE=%h/.config/cluster-gateway/env
+ExecStart=%h/ops/bin/omp-cluster-proxy
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

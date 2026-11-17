@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""Spark thermal/power black box: fsynced rows every 2 s, daily files, last 14 files."""
+import csv, glob, math, os, subprocess, sys, time
+
+D = os.path.expanduser("~/ops/thermal-log")
+new_directory = not os.path.exists(D)
+os.makedirs(D, exist_ok=True)
+zones = sorted(glob.glob("/sys/class/thermal/thermal_zone*/temp"))
+header = ["utc", "gpu_c", "gpu_w", "gpu_util", "sm_mhz", "clk_reasons",
+          "memavail_mib", "swap_mib", "load1"]
+header.extend(f"z{i}_c" for i in range(len(zones)))
+checked_file = None
+
+
+def rd(p):
+    try:
+        return open(p).read().strip()
+    except OSError:
+        return ""
+
+
+def mem():
+    m = {}
+    for line in open("/proc/meminfo"):
+        k, v = line.split(":")
+        m[k] = int(v.split()[0]) // 1024
+    return m["MemAvailable"], m["SwapTotal"] - m["SwapFree"]
+
+
+def temperature(path):
+    try:
+        return int(rd(path)) // 1000
+    except ValueError:
+        return ""
+
+
+def sync_directory(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def prune(current):
+    # Reserve one of the existing 14 daily-file slots for today's file.
+    others = sorted(set(glob.glob(os.path.join(D, "*.csv"))) - {current})
+    for old in others[:-13]:
+        try:
+            os.remove(old)
+        except OSError as exc:
+            print(f"blackbox retention failed for {old}: {exc}", file=sys.stderr, flush=True)
+
+
+while True:
+    t = time.time()
+    g = [""] * 5
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=temperature.gpu,power.draw,utilization.gpu,clocks.sm,clocks_event_reasons.active",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5)
+        lines = result.stdout.splitlines()
+        if result.returncode == 0 and len(lines) == 1:
+            fields = [value.strip() for value in next(csv.reader(lines, strict=True))]
+            if len(fields) == 5:
+                int(fields[0])
+                power = float(fields[1])
+                int(fields[2])
+                int(fields[3])
+                int(fields[4], 0)
+                if math.isfinite(power):
+                    g = fields
+    except (OSError, subprocess.SubprocessError, csv.Error, ValueError):
+        pass
+    z = [temperature(path) for path in zones]
+    av, sw = mem()
+    ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+    load1 = rd("/proc/loadavg").split()[0]
+    f = os.path.join(D, time.strftime("%Y-%m-%d", time.gmtime(t)) + ".csv")
+    prune(f)
+    first_open = f != checked_file
+    empty = first_open and (not os.path.exists(f) or os.path.getsize(f) == 0)
+    partial = False
+    if first_open and not empty:
+        with open(f, "rb") as previous:
+            previous.seek(-1, os.SEEK_END)
+            partial = previous.read(1) != b"\n"
+    with open(f, "a", newline="") as fh:
+        writer = csv.writer(fh, lineterminator="\n")
+        if empty:
+            writer.writerow(header)
+        elif partial:
+            # Preserve the interrupted record without joining the next sample to it.
+            print(f"blackbox preserved unterminated record in {f}", file=sys.stderr, flush=True)
+            fh.write("\n")
+        writer.writerow([ts, *g, av, sw, load1, *z])
+        fh.flush()
+        os.fsync(fh.fileno())
+    if first_open:
+        sync_directory(D)
+        if new_directory:
+            sync_directory(os.path.dirname(D))
+            new_directory = False
+        checked_file = f
+    time.sleep(max(0.1, 2 - (time.time() - t)))

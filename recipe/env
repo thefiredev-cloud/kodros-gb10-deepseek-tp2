@@ -1,0 +1,18 @@
+# Copy to the upstream checkout as .env (read by scripts/config.sh after the environment and scripts/local.sh).
+# This is the pair's live .env as of 2026-10-27 19:02Z, with home paths replaced. See docs/PERFORMANCE.md.
+
+# 8 streams: c4 113 -> 196 tok/s, c8 188 -> 328 tok/s aggregate, c1 unchanged (95 tok/s). Measured 2026-10-27.
+PARALLEL=8
+# 2000 us RDMA nap: sustained c8 SoC peak 83.8 C -> 77.8 C, throughput unchanged. Measured 2026-10-27.
+RDMA_NAP_US=2000
+
+# Spill v2 (enabled 2026-10-27 19:02Z): kept prompt states on each node's NVMe, read back after eviction or restart
+# instead of a full re-prefill. Restore after an engine restart measured 2026-10-27 19:37Z: 3.9 s against 35.0 s cold.
+# Rollback: delete these four settings and run ./start.sh restart.
+SPILL_GIB=64
+# Rank 0 (head) and rank 1 (worker) spill folders: local NVMe, never on NFS.
+SPILL_DIR=/home/user/dsv41-tensorfold-spill
+WORKER_SPILL_DIR=/home/user/dsv41-tensorfold-spill
+# Rank 0 reads Engram from a folder of hardlinks to the HF blobs. The engine's spill fingerprint lists only regular
+# files in the Engram folder, so the HF snapshot's symlinks made rank 0's listing empty (FingerprintMismatch, field engram).
+HEAD_ENGRAM_DIR=/home/user/.cache/dsv41-tensorfold/engram-1bae0e10

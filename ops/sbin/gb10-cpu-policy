@@ -1,0 +1,22 @@
+#!/bin/bash
+# gb10-cpu-policy: GB10 CPU thermal policy (2026-10-26).
+# apply: schedutil governor on every core; cap the Cortex-X925 cores (cpuinfo_max_freq > CAP) at CAP kHz.
+# revert: performance governor and full hardware max on every core.
+# Source: NVIDIA developer forum threads t/383939 and t/386805 (X925 cap + schedutil reported to stop GB10
+# overheating with no speed loss).
+set -eu
+CAP=${GB10_X925_CAP_KHZ:-2808000}
+mode=${1:-apply}
+for p in /sys/devices/system/cpu/cpufreq/policy*; do
+  hw=$(cat "$p/cpuinfo_max_freq")
+  case $mode in
+    apply)
+      echo schedutil >"$p/scaling_governor"
+      if [ "$hw" -gt "$CAP" ]; then echo "$CAP" >"$p/scaling_max_freq"; else echo "$hw" >"$p/scaling_max_freq"; fi ;;
+    revert)
+      echo performance >"$p/scaling_governor"
+      echo "$hw" >"$p/scaling_max_freq" ;;
+    *) echo "usage: $0 apply|revert" >&2; exit 2 ;;
+  esac
+done
+echo "gb10-cpu-policy $mode: $(cat /sys/devices/system/cpu/cpufreq/policy*/scaling_governor | sort | uniq -c | tr -s ' ' | tr '\n' ';') max=$(cat /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq | sort | uniq -c | tr -s ' ' | tr '\n' ';')"

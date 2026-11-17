@@ -1,0 +1,28 @@
+#!/bin/bash
+# spark-memguard: GB10 unified-memory guard for the dsv41-1017-tf engine (idea from 0xSero/DeepSeek-V4.1-Flash-Two-Sparks
+# scripts/memguard.sh, MIT). It stops the configured engine below a conservative unified-memory floor.
+# It never restarts anything. Relaunch through the recipe's start.sh (or dsv41-keepalive) after checking load.
+#   FLOOR_GIB (default 1): kill threshold.  TRACE_GIB (default 4): log top RSS every 10 s below this.
+FLOOR=${FLOOR_GIB:-1}; TRACE=${TRACE_GIB:-4}; NAME=${ENGINE_CONTAINER:-dsv41-1017-tf}
+LOG=$HOME/ops/memguard/memguard.log; mkdir -p "$(dirname "$LOG")"
+echo "$(date -Is) start floor=${FLOOR}G trace=${TRACE}G container=$NAME" >> "$LOG"
+n=0
+while sleep 1; do
+  if ! a=$(awk '$1 == "MemAvailable:" { if ($2 !~ /^[0-9]+$/) exit 1; print int($2/1048576); found=1; exit } END { if (!found) exit 1 }' /proc/meminfo); then
+    echo "$(date -Is) invalid or unavailable MemAvailable; guard cannot evaluate memory" >> "$LOG"
+    exit 1
+  fi
+  n=$((n+1))
+  if [ "$a" -lt "$TRACE" ] && [ $((n % 10)) = 0 ]; then
+    echo "$(date -Is) avail ${a}G top-rss: $(ps -eo rss,comm --sort=-rss | awk 'NR>1&&NR<5{printf "%s=%.1fG ", $2, $1/1048576}')" >> "$LOG"
+  fi
+  if [ "$a" -lt "$FLOOR" ] && [ -n "$(docker ps -q --filter "name=^${NAME}\$")" ]; then
+    echo "$(date -Is) MemAvailable ${a}G < ${FLOOR}G: killing $NAME" >> "$LOG"
+    if docker kill "$NAME" >> "$LOG" 2>&1; then
+      echo "$(date -Is) killed; relaunch via start.sh after checking load" >> "$HOME/ops/memguard/TRIPPED"
+      sleep 30
+    else
+      echo "$(date -Is) kill failed for $NAME; termination is unconfirmed" >> "$LOG"
+    fi
+  fi
+done

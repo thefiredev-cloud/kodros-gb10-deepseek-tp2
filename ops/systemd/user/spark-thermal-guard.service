@@ -1,0 +1,9 @@
+[Unit]
+Description=Spark-cluster thermal and memory guard (stop DeepSeek engine at >=89C for 6 s or MemAvailable <1 GiB)
+After=spark-thermal-blackbox.service
+[Service]
+ExecStart=%h/ops/bin/spark-thermal-guard
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=default.target

@@ -1,0 +1,17 @@
+[
+  {
+    "id": "dsv41-1017-tf",
+    "display_name": "DeepSeek V4.1 Flash 1017 Ablit (Mia EAQ 2.9)",
+    "engine": "tensorfold",
+    "engine_container": "dsv41-1017-tf",
+    "recipe_dir": "/home/user/work/mia-dsv41/repo",
+    "served_model": "DeepSeek-V4.1-Flash-1017-EXL3",
+    "context_length": 1048576,
+    "slots": 8,
+    "uncensored": true,
+    "est_swap_s": 900,
+    "hidden": false,
+    "start_command": ["./start.sh"],
+    "stop_command": ["./stop.sh"]
+  }
+]

@@ -1,0 +1,7 @@
+{
+ "note": "ops/bin/cluster-bench DEFAULT_BASELINE, recorded 2026-10-27 after PARALLEL=8 and RDMA_NAP_US=2000, before spill v2. Fixed code prompt, temperature 0, thinking off, max_tokens 600. c1 = median of 3 single requests; c4/c8 = aggregate completion tokens / wall time. soc_peak = hottest thermal_zone0 of the two nodes after the run, in C.",
+ "c1": 96.1,
+ "c4": 197.4,
+ "c8": 327.9,
+ "soc_peak": 70.5
+}

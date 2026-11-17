@@ -1,0 +1,8 @@
+[Unit]
+Description=GB10 memory guard: kill dsv41-1017-tf when MemAvailable < 1 GiB (never restarts)
+[Service]
+ExecStart=%h/ops/bin/spark-memguard
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=default.target

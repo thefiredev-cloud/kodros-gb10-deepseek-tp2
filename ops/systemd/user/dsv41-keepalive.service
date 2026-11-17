@@ -1,0 +1,7 @@
+[Unit]
+Description=Keep DeepSeek-V4.1-Flash-1017 serving (restart after power loss or guard stop, when cool)
+After=network-online.target spark-thermal-blackbox.service
+[Service]
+Type=oneshot
+ExecStart=%h/ops/bin/dsv41-keepalive
+TimeoutStartSec=1800

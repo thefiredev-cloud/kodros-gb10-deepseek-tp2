@@ -1,0 +1,32 @@
+{
+  "recorded": "2026-10-27T19:10Z",
+  "served_model_id": "DeepSeek-V4.1-Flash-1017-EXL3",
+  "model": {
+    "base": {"repo": "deepseek-ai/DeepSeek-V4.1-Flash-1017", "revision": "1bae0e1088993b9b82de08f59de5be5a34e42170", "license": "MIT", "used_for": "Engram tables, shards 47-48"},
+    "quantization": {"repo": "Mia-AiLab/DeepSeek-V4.1-Flash-1017-EXL3-EAQ-v1-2.9-bpw", "revision": "45ee5d0fd106c94a3d77f721e09cbb2f50e5a16b", "license": "MIT", "size_gib": 196},
+    "overlay": {"repo": "drowzeys/keys-DeepSeek-V4.1-Flash-1017-Abliterated", "revision": "0bdc2036113c4fdda38ef6005b3cbc0bc0dfa0f0", "file": "exl3_wo_b_l10_35_mia29.safetensors", "access": "gated by its author; not redistributed"}
+  },
+  "recipe": {"repo": "https://github.com/MiaAI-Lab/DeepSeek-v4.1-Flash-1017-2x-DGX-Sparks", "commit": "27741e176a9e5b98c10c9c7d012fd3e4fcdc19b6", "local_patches": ["recipe/patches/0001-start-port-check-bound-host.patch"]},
+  "engine": {
+    "image": "tensorfold-dsv41:exl3-tp2-928adbd0e57d",
+    "tensorfold_fork": {"repo": "https://github.com/bertholomus/TensorFold", "branch": "deepseek-v41-zig", "commit": "629c524a0ea57512a5342abb498d1b7c25353343"},
+    "kit": {"repo": "https://github.com/bertholomus/deepseek-v4.1-tensorfold-tp2-2xgb10", "commit": "abe07c7d509a0199cc7fec15263be2aa52ac652f"},
+    "tensor_parallel": 2,
+    "rank0": ["tensorfold-native", "serve", "--context", "1048576", "--parallel", "8", "--max-tokens", "32768", "--temperature", "1.0", "--top-p", "0.95", "--top-k", "20", "--thinking", "--spill-gib", "64", "--spill-min-free-gib", "50", "--spill-min-tokens", "8192"],
+    "rank1": ["tf-dsv41-lanes", "--pool", "1048576", "--streams", "8", "--drafts", "1", "--graphs", "1", "--side", "1", "--prefetch", "1", "--aio", "1"],
+    "env": {"TF_DS_STREAMS": "8", "TF_RDMA_NAP_US": "2000", "TF_RDMA_IDLE_S": "2", "TF_DS_PREFILL_INTERLEAVE_MS": "250", "TF_DS_GRAPHS": "1", "TF_DS_L2_PREFETCH": "1", "TF_DS_HC_SIDE": "1", "TF_DS_ENGRAM_AIO": "1", "TF_DS_REPLAY_FLOOR": "1", "TF_RDMA_GID_INDEX": "3", "TF_DS_SPILL_GIB": "64"}
+  },
+  "hardware": {
+    "rank0": "NVIDIA DGX Spark (GB10, 128 GB unified memory), kernel 6.17.0-1029-nvidia",
+    "rank1": "ASUS Ascent GX10 (GB10, 128 GB unified memory), kernel 6.17.0-1026-nvidia",
+    "link": "ConnectX-7, two RoCE v2 rails at 200,000 Mb/s each, MTU 9000, GID index 3, firmware 28.50.1002",
+    "gpu_clock_mhz": "300-2100",
+    "x925_cap_khz": 2808000
+  },
+  "measured_2026_10_27": {
+    "c1_tok_s": 96.1, "c4_aggregate_tok_s": 197.4, "c8_aggregate_tok_s": 327.9,
+    "cold_prefill_tok_s": {"11.3k": 2152, "22.7k": 3914, "45.3k": 4322},
+    "agent_traffic_8_7h": {"prompt_tokens": 76561309, "uncached_fraction": 0.0415, "dspark_acceptance": 0.671},
+    "prompt_65k_seconds": {"cold": 35.0, "shared_prefix_reused_63488": 4.8, "restored_from_spill_after_restart": 3.9}
+  }
+}

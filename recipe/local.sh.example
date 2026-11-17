@@ -1,0 +1,20 @@
+# Copy to the upstream checkout as scripts/local.sh. This is the file the pair runs with, with addresses,
+# users and paths replaced by placeholders. 192.0.2.1 is the head's ConnectX-7 address, 192.0.2.2 the worker's.
+WORKER=user@192.0.2.2
+FABRIC_PEER=192.0.2.2
+# The worker mounts the checkpoint over NFSv4 from an existing exporter container on the head that serves
+# ~/.cache/huggingface/hub as / (fsid=0), read-only, to the worker's address only. Point the recipe at it
+# instead of installing a second NFS server.
+HF_CACHE=$HOME/.cache/huggingface/hub/mia
+NFS_SERVER=192.0.2.1
+NFS_PATH=/hub/mia
+# Engram's two tables (~190 GiB) on the worker's local NVMe; over NFS a decode round's random 4 KiB reads are ~10x slower.
+WORKER_ENGRAM_DIR='$HOME/.cache/dsv41-tensorfold/engram-1bae0e10'
+# Apply the gated Keys overlay (drowzeys/keys-DeepSeek-V4.1-Flash-1017-Abliterated @ 0bdc2036).
+# You need your own access to that repository and an HF read token; this repository does not carry it.
+ABLIT=1
+# Bind the API to the head's link address on :8000 with the served id our clients already use.
+HOST=192.0.2.1
+PORT=8000
+SERVED_NAME=DeepSeek-V4.1-Flash-1017-EXL3
+CONTAINER_NAME=dsv41-1017-tf

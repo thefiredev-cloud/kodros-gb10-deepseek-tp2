@@ -1,0 +1,28 @@
+From: thefiredev-cloud <219066934+thefiredev-cloud@users.noreply.github.com>
+Subject: [PATCH] start.sh: only a listener on the bound address blocks the start
+
+Upstream start.sh refuses to start when anything listens on $PORT, on any
+address. On this pair another proxy holds :8000 on a different interface
+address, so the engine (HOST set to the head's ConnectX-7 address) could never
+start. With this patch only a listener on $HOST itself, or a wildcard listener,
+counts as a conflict.
+
+Applies to MiaAI-Lab/DeepSeek-v4.1-Flash-1017-2x-DGX-Sparks at 27741e1.
+---
+ start.sh | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/start.sh b/start.sh
+index 80217f0..20ddc33 100755
+--- a/start.sh
++++ b/start.sh
+@@ -201,7 +201,8 @@ if (( ! DRY )); then
+   if exists_here || exists_worker 1; then ./stop.sh; fi
+   docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+   worker 1 "docker rm -f '$CONTAINER_NAME' >/dev/null 2>&1; true"
+-  if ss -ltn "sport = :$PORT" 2>/dev/null | grep -q LISTEN; then die "port $PORT is already in use: $(ss -ltnp "sport = :$PORT" 2>/dev/null | tail -n +2)"; fi
++  # local: only a listener on the address we bind (or a wildcard) conflicts; another proxy holds :8000 on a different address
++  if ss -ltn "sport = :$PORT" 2>/dev/null | awk -v h="$HOST" 'NR > 1 { a = $4; sub(/:[0-9]+$/, "", a); if (h == "0.0.0.0" || h == "::" || a == h || a == "0.0.0.0" || a == "*" || a == "[::]") f = 1 } END { exit !f }'; then die "port $PORT is already in use: $(ss -ltnp "sport = :$PORT" 2>/dev/null | tail -n +2)"; fi
+   # memory: a rank that takes all of a Spark's memory freezes the machine, so refuse to start on one that cannot hold it.
+   # Counted as the engine's startup budget counts it (0119): MemAvailable plus the pages parked on the per-CPU free
+   # lists (scripts/memavail.sh). Right after an image build or copy those drain for a minute or two: wait up to

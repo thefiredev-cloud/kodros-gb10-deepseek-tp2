@@ -1,0 +1,13 @@
+[Unit]
+Description=GB10 CPU thermal policy: schedutil on all cores, X925 cores capped at 2.808 GHz
+After=sysinit.target nv-cpu-governor.service
+ConditionPathExists=/sys/devices/system/cpu/cpufreq/policy0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/gb10-cpu-policy apply
+ExecStop=/usr/local/sbin/gb10-cpu-policy revert
+
+[Install]
+WantedBy=multi-user.target
