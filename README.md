@@ -2,6 +2,13 @@
 
 How the [Kodros](https://kodros.ai) local inference cluster serves DeepSeek-V4.1-Flash-1017 across two GB10 machines (an NVIDIA DGX Spark and an ASUS Ascent GX10) with tensor parallelism. The repo holds the settings, one patch to the upstream recipe, the watchdogs that keep the pair serving, and the measurements behind each setting. No model weights are here.
 
+## On your hardware
+
+- Does: serves one large open model from two machines in your rack. Clients on your network use an OpenAI-compatible API.
+- Needs: two NVIDIA GB10 machines with 128 GB unified memory each (256 GB together), a ConnectX-7 link between them (two 200 Gb/s RoCE rails) and about 400 GB of free disk for the first download. The settings are tuned for that pair only.
+- Model: DeepSeek-V4.1-Flash-1017 at 2.9 bits per weight, 196 GiB of weights. DeepSeek is a China-origin model (MIT license).
+- Stays on-prem: serving runs on the two machines. The weights download once from Hugging Face during setup. The API listens on the head's link address and has no API key, so limit who can reach it.
+
 ## How it works
 
 ```mermaid
