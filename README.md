@@ -18,6 +18,8 @@ flowchart LR
   G1[spark-thermal-guard, memguard, keepalive] -. stop or restart .-> H & W
 ```
 
+Static diagram: [docs/architecture.svg](docs/architecture.svg). Step-by-step build: [BUILD.md](BUILD.md).
+
 The engine is TensorFold's native engine running the EXL3 2.9 bpw quantization at TP=2, with an OpenAI-compatible API, a 1,048,576-token context and 8 concurrent streams. A thermal guard stops both ranks at 89 C, a memory guard kills a rank below 1 GiB free, and a keepalive restarts the pair once both nodes are cool.
 
 ## Measured (2026-10-27, full client path)

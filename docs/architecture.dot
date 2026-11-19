@@ -1,0 +1,18 @@
+digraph "kodros-gb10-deepseek-tp2 architecture" {
+  rankdir=TB; bgcolor="white"; pad=0.3; nodesep=0.45; ranksep=0.7;
+  node [shape=box, style="rounded,filled", fillcolor="#f6f6f8", color="#c9c9d1", fontname="Helvetica,Arial,sans-serif", fontsize=12, fontcolor="#1b1b1f", margin="0.18,0.1", penwidth=1.4];
+  edge [color="#5c5c66", fontname="Helvetica,Arial,sans-serif", fontsize=10, fontcolor="#5c5c66", arrowsize=0.8];
+  ws [label="Workstation agents"];
+  px [label="omp-cluster-proxy\n127.0.0.1:8080, adds bearer"];
+  sw [label="cluster-swap.py on head :8010\nmodel gate, health, profile swaps", color="#c2410c", penwidth=2.2, fillcolor="#fff7ed"];
+  head [label="Head: DGX Spark\nTensorFold serve, rank 0, API"];
+  worker [label="Worker: Ascent GX10\nrank 1"];
+  guards [label="spark-thermal-guard\nmemguard, keepalive"];
+  ws -> px [];
+  px -> sw [];
+  sw -> head [];
+  head -> worker [label="2 x 200 Gb/s RoCE v2", dir=both];
+  head -> worker [label="NFS checkpoint", style="dashed"];
+  guards -> head [label="stop or restart", style="dashed"];
+  guards -> worker [style="dashed"];
+}
