@@ -1,6 +1,6 @@
 # Build guide: kodros-gb10-deepseek-tp2
 
-This repository does not build a program. It holds the settings, one patch, the watchdogs and the units that run the [MiaAI-Lab recipe](https://github.com/MiaAI-Lab/DeepSeek-v4.1-Flash-1017-2x-DGX-Sparks) on two GB10 machines. These steps rebuild the deployment. They were not run again on 2026-11-18 because they need the hardware. The measured results are dated 2026-10-27 in [docs/evidence/](docs/evidence/).
+This repository does not build a program. It holds the settings, one patch, the watchdogs and the units that run the [MiaAI-Lab recipe](https://github.com/MiaAI-Lab/DeepSeek-v4.1-Flash-1017-2x-DGX-Sparks) on two GB10 machines. These steps rebuild the deployment. They were not run again on 2026-11-18 because they need the computers. The measured results are dated 2026-10-27 in [docs/evidence/](docs/evidence/).
 
 ## You need
 

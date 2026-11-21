@@ -40,7 +40,7 @@ The overlay replaces 104 attention tensors in layers 10-35 of the Mia EXL3 pack,
 have not measured output quality against the stock checkpoint. The recipe's README notes that the quantization's model
 card has no perplexity or KL measurement against the unquantized model.
 
-## Hardware
+## Compute
 
 Rank 0: NVIDIA DGX Spark. Rank 1: ASUS Ascent GX10. Both are GB10 systems with 128 GB unified memory, joined by their
 ConnectX-7 ports as two RoCE v2 rails (200,000 Mb/s each, MTU 9000). GPU clock held to 300-2100 MHz on both.
