@@ -19,7 +19,7 @@ This repository pins it, adds our deltas, and does not copy it. Model weights ar
 | API | OpenAI-compatible, model id `DeepSeek-V4.1-Flash-1017-EXL3`, 1,048,576-token window, 8 concurrent streams |
 | Model card | [thefiredev/DeepSeek-V4.1-Flash-1017-Ablit-2xSpark](https://huggingface.co/thefiredev/DeepSeek-V4.1-Flash-1017-Ablit-2xSpark) (no weights) |
 
-## Hardware
+## Compute
 
 | | Head (rank 0) | Worker (rank 1) |
 | --- | --- | --- |
